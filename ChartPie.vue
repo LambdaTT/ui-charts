@@ -13,7 +13,7 @@
     <!-- Empty -->
     <div class="text-center q-pa-xl" v-show="!showLoader && RawData.length == 0">
       <div>
-        <q-icon size="lg" name="fas fa-folder-open"></q-icon> *
+        <q-icon size="lg" name="far fa-folder-open"></q-icon> *
       </div>
       <div class="text-h6">
         Sem Dados.
