@@ -35,7 +35,7 @@ import Utils from '../../../services/utils'
 import Chart from 'chart.js'
 
 export default {
-  name: 'components-common-charts-bar',
+  name: 'ui-charts-bar',
 
   props: {
     Name: String,
@@ -129,7 +129,6 @@ export default {
         },
 
       };
-
 
       // Clone datasets, detaching from reference:
       var datasets = JSON.parse(JSON.stringify(chartObj.data.datasets));
