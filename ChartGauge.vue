@@ -187,7 +187,7 @@ export default {
     },
   },
 
-  beforeDestroy() {
+  beforeUnmount() {
     if (this.chartInstance) {
       this.chartInstance.destroy();
     }
