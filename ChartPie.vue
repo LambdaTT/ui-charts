@@ -11,7 +11,7 @@
     </div>
 
     <!-- Empty -->
-    <div class="text-center q-pa-xl" v-show="!showLoader && RawData.length == 0">
+    <div class="text-center q-pa-xl" v-show="!showLoader && RawData?.length == 0">
       <div>
         <q-icon size="lg" name="far fa-folder-open"></q-icon> *
       </div>
@@ -21,7 +21,7 @@
     </div>
 
     <!-- Content -->
-    <div v-show="!showLoader && RawData.length > 0" :id="`chart-${Name}-container`">
+    <div v-show="!showLoader && RawData?.length > 0" :id="`chart-${Name}-container`">
       <canvas :style="this.CanvasStyle" :id="`chart-${Name}-canvas`"></canvas>
     </div>
   </div>
@@ -35,7 +35,7 @@ import Utils from '../../../services/utils'
 import Chart from 'chart.js'
 
 export default {
-  name: 'components-common-charts-pie',
+  name: 'ui-charts-pie',
 
   props: {
     Name: String,
