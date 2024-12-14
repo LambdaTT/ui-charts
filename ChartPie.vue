@@ -11,7 +11,7 @@
     </div>
 
     <!-- Empty -->
-    <div class="text-center q-pa-xl" v-show="!showLoader && RawData?.length == 0">
+    <div class="text-center q-pa-xl" v-show="!showLoader && rawData?.length == 0">
       <div>
         <q-icon size="lg" name="far fa-folder-open"></q-icon> *
       </div>
@@ -21,14 +21,15 @@
     </div>
 
     <!-- Content -->
-    <div v-show="!showLoader && RawData?.length > 0" :id="`chart-${Name}-container`">
-      <canvas :style="this.CanvasStyle" :id="`chart-${Name}-canvas`"></canvas>
+    <div v-show="!showLoader && rawData?.length > 0" :id="`chart-${Name}-container`">
+      <canvas :style="this.CanvasStyle" ref="chartCanvas"></canvas>
     </div>
   </div>
 </template>
 
 <script>
 // Services:
+import Http from '../../../services/http'
 import Utils from '../../../services/utils'
 
 // Libs:
@@ -39,21 +40,39 @@ export default {
 
   props: {
     Name: String,
-    RawData: Object,
-    LoadDataFn: Function,
-    Filter: Function,
-    Datasets: Object,
+    modelValue: {
+      type: Object,
+      required: true
+    },
+    DataURL: String,
+    Filters: Object,
     LabelsField: String,
-    HideLegend: Boolean,
+    ValueField: String,
     CanvasStyle: String,
     Percentage: Boolean,
+    BeforeLoad: Function,
+    OnLoaded: Function,
   },
 
   data() {
     return {
       chartElement: null,
       loading: false,
-      showLoader: false
+      showLoader: false,
+      rawData: [],
+      loadTimeout: null,
+      filters: {}
+    }
+  },
+
+  computed: {
+    factory() {
+      return {
+        data: this.rawData,
+        element: this.chartElement,
+        filters: this.filters,
+        reload: this.reload
+      }
     }
   },
 
@@ -64,42 +83,70 @@ export default {
       }
     },
 
-    RawData: {
-      handler: function () {
-        this.triggerChart();
+    Filters: {
+      handler(v) {
+        // Save filters state:
+        localStorage.removeItem(`ChartPie.${this.Name}.filters`);
+
+        var filters = JSON.parse(JSON.stringify(this.Filters));
+
+        if (Object.keys(filters).length > 0)
+          localStorage.setItem(`ChartPie.${this.Name}.filters`, JSON.stringify(filters));
+
+        clearTimeout(this.loadTimeout);
+
+        for (let k in filters) {
+          if (filters[k] == null)
+            delete filters[k] == null
+        }
+
+        this.filters = filters;
+
+        this.loadTimeout = setTimeout(async () => {
+          var response = await this.loadData();
+          this.rawData = response.data
+        }, 200);
       },
       deep: true
     },
+
+    rawData: {
+      handler() {
+        this.triggerChart();
+        this.$emit('update:model-value', this.factory);
+      }
+    }
   },
 
   methods: {
     async loadData() {
       if (!this.loading) {
+        // turn on loading indicator
         this.loading = true;
 
         var params = {};
+        if (!!this.filters)
+          for (let k in this.filters)
+            if (!!this.filters[k])
+              params[k] = this.filters[k];
 
-        if (!!this.Filter) params = this.Filter();
+        try {
+          // Before Load callback:
+          if (this.BeforeLoad) await this.BeforeLoad(params);
 
-        await this.LoadDataFn(params);
+          // fetch data from server
+          var response = await Http.get(this.DataURL, params);
+
+          // On Loaded callback:
+          if (this.OnLoaded) await this.OnLoaded(response);
+
+          return response;
+        } catch (err) {
+          this.loading = false;
+          this.errorState = true;
+          this.$emit('error-thrown', err);
+        }
       }
-    },
-
-    datasets() {
-      var datasets = [];
-      for (let i = 0; i < this.Datasets.length; i++) {
-        let set = this.Datasets[i];
-
-        datasets.push({
-          label: set.label,
-          data: [],
-          backgroundColor: [],
-          borderColor: [],
-          borderWidth: 1
-        })
-      }
-
-      return datasets;
     },
 
     triggerChart() {
@@ -107,85 +154,34 @@ export default {
         type: "pie",
         data: {
           labels: [],
-          datasets: this.datasets()
+          datasets: [{
+            label: 'chart pie',
+            data: [],
+            backgroundColor: [],
+            hoverOffset: 4
+          }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          legend: { display: !this.HideLegend },
+          legend: { display: false },
           tooltips: {
             mode: 'label',
-            callbacks: {
-              label: (tooltipItem, data) => {
-                var index = tooltipItem.datasetIndex;
-                var value = data.datasets[index].data[tooltipItem.index];
-
-                if (!!this.Datasets[index].formatTooltip && typeof this.Datasets[index].formatTooltip == 'function')
-                  return this.Datasets[index].formatTooltip(data.datasets[index].label, value);
-                else return `${data.datasets[index].label}: ${value}${this.Percentage ? '%' : ''}`;
-              }
-            }
           }
         },
 
       };
 
       // Clone datasets, detaching from reference:
-      var datasets = JSON.parse(JSON.stringify(chartObj.data.datasets));
-      var labels = [];
-      var bgColors = [];
-      var strokeColors = [];
+      var dataset = chartObj.data.datasets[0]
+      for (let i = 0; i < this.rawData.length; i++) {
+        let data = this.rawData[i];
+        chartObj.data.labels.push(data[this.LabelsField]);
 
-      if (this.RawData[0] instanceof Array) {
-        let setLabels = true;
-        for (let j = 0; j < this.Datasets.length; j++) {
-          let datasetData = [];
-          for (let i = 0; i < this.RawData[j].length; i++) {
-            let data = this.RawData[j][i];
-            let value = data[this.Datasets[j].field];
+        dataset.backgroundColor.push(Utils.randomHexColor())
 
-            if (setLabels)
-              labels.push(data[this.LabelsField]);
-
-            let color = Utils.randomHexColor();
-            bgColors.push(color);
-            strokeColors.push(color);
-
-            datasetData.push(value);
-          }
-          if (this.Percentage) {
-            let whole = datasetData.sumValues();
-
-            for (let idx = 0; idx < datasetData.length; idx++) {
-              datasetData[idx] = ((datasetData[idx] / whole) * 100).toFixed(2);
-            }
-          }
-
-          setLabels = false;
-          datasets[j].data = datasetData;
-          datasets[j].backgroundColor = bgColors;
-          datasets[j].borderColor = strokeColors;
-        }
-      } else {
-        for (let i = 0; i < this.RawData.length; i++) {
-          let data = this.RawData[i];
-          labels.push(data[this.LabelsField]);
-
-          for (let j = 0; j < this.Datasets.length; j++) {
-            let dataset = this.Datasets[j];
-            let indicator = !!dataset.indicator ? dataset.indicator.split('=') : null;
-
-            if (!!indicator && data[indicator[0]] != indicator[1])
-              continue;
-
-            datasets[j].data.push(data[dataset.field]);
-          }
-        }
+        dataset.data.push(data[this.ValueField]);
       }
-
-      chartObj.data.labels = labels;
-      // Update reference with (re)created datasets:
-      chartObj.data.datasets = datasets;
 
       // Update chart:
       if (this.chartElement != null) {
@@ -194,18 +190,25 @@ export default {
       }
       // Start new chart: 
       else {
-        var ctx = document.getElementById(`chart-${this.Name}-canvas`);
+        var ctx = this.$refs.chartCanvas;
         this.chartElement = new Chart(ctx, chartObj);
       }
 
       this.loading = false;
     },
+
+    reload() {
+      clearTimeout(this.loadTimeout);
+
+      this.loadTimeout = setTimeout(async () => {
+        this.rawData = (await this.loadData()).data;
+      }, 200);
+    }
   },
 
-  mounted() {
-    this.loadData();
-
-    this.$emit('reload-fn', this.loadData);
+  async mounted() {
+    var response = await this.loadData();
+    this.rawData = response.data
   }
 }
 </script>
